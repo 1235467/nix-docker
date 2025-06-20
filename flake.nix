@@ -60,12 +60,29 @@
           src = pkgs.fetchFromGitHub {
             owner = "BerriAI";
             repo = "litellm";
-            tag = "v1.72.1.dev5";
-            hash = "sha256-pgGLcDyhPMzI8U7CBUqGI7xTefUG2MwdFh3PeE16Az8=";
+            tag = "v1.72.6-stable";
+            hash = "sha256-Qs/jmNJx/fztLqce47yd1pzIZyPsz0XhXUyoC1vkp6g=";
           };
           propagatedBuildInputs = prev.propagatedBuildInputs ++ [ pkgs.python312Packages.langfuse ];
         }
       );
+      packages.x86_64-linux.supergateway = pkgs.buildNpmPackage rec {
+        pname = "supergateway";
+        version = "3.1.0";
+        src = pkgs.fetchFromGitHub {
+          owner = "supercorp-ai";
+          repo = pname;
+          tag = "v${version}";
+          hash = "sha256-z0X+8UPY8Jok126CgIWGvvJK2PQeLB+AjUXNoHquy8E=";
+        };
+
+        npmDepsHash = "sha256-aefAvfSiEa+W2SAkItBas+5Qu82RE/+Tz+t724GFmto=";
+
+        # The prepack script runs the build script, which we'd rather do in the build phase.
+        npmPackFlags = [ "--ignore-scripts" ];
+
+        NODE_OPTIONS = "--openssl-legacy-provider";
+      };
       packages.x86_64-linux.sillytavern-base = nix2containerPkgs.nix2container.buildImage {
         name = "sillytavern-base";
         config = {
@@ -82,7 +99,7 @@
           })
           mkUser
           mkTmp
-          mkEnvSymlink
+          mkEnvSymlink # overmind calls /usr/bin/env which is not available in nixos
         ];
         perms = [
           mkTmpPerms
@@ -118,6 +135,31 @@
         ];
         maxLayers = 100;
         tag = "${packages.x86_64-linux.litellm-pkg.src.tag}";
+      };
+      packages.x86_64-linux.mcp-gateway = nix2containerPkgs.nix2container.buildImage {
+        name = "mcp-gateway";
+        config = {
+          Cmd = [ "/bin/bash" "-c" ''/bin/supergateway --stdio "$MCP_COMMAND" --port 8000 --baseUrl http://0.0.0.0:8000 --ssePath /sse --messagePath /message'' ];
+          Env = [
+            "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+            "PATH=/bin:/usr/bin:/sbin:/usr/sbin"
+          ];
+        };
+        copyToRoot = [
+          (pkgs.buildEnv {
+            name = "root";
+            paths = with pkgs; [ gitMinimal uutils-coreutils-noprefix python3 bashInteractive nodejs uv packages.x86_64-linux.supergateway ];
+            pathsToLink = [ "/bin" ];
+          })
+          mkUser
+          mkTmp
+          mkEnvSymlink
+        ];
+        perms = [
+          mkTmpPerms
+          mkUserPerms
+        ];
+        maxLayers = 100;
       };
     };
 }
